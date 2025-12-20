@@ -62,8 +62,6 @@ sla-service/
 │   ├── api/                        # API endpoints
 │   │   ├── __init__.py
 │   │   ├── tickets.py             # Ticket endpoints
-│   │   ├── dashboard.py           # Dashboard endpoints
-│   │   └── websocket.py           # WebSocket endpoint
 │   ├── utils/                      # Utilities
 │   │   ├── __init__.py
 │   │   ├── sla_calculator.py      # SLA time calculations
@@ -85,7 +83,7 @@ sla-service/
 ## 🚦 Quick Start
 
 ### Prerequisites
-- Python 3.11+
+- Python 3.12+
 - Docker and Docker Compose
 - uv package manager (recommended)
 
@@ -203,19 +201,64 @@ The service uses `sla_config.yaml` to define SLA targets:
 
 ```yaml
 sla_targets:
-  response:        # Time to first response
+  ENTERPRISE:
     P0:
-      enterprise: 15    # minutes
-      premium: 30
-      standard: 60
+      response_minutes: 15
+      resolution_minutes: 60
+      escalation:
+        LEVEL_1: 10
+        LEVEL_2: 20
+        LEVEL_3: 30
+        LEVEL_4: 45
+
     P1:
-      enterprise: 60
-      # ... more tiers
-  resolution:      # Time to complete resolution
+      response_minutes: 60
+      resolution_minutes: 240
+
+    P2:
+      response_minutes: 240
+      resolution_minutes: 480
+
+    P3:
+      response_minutes: 480
+      resolution_minutes: 1440
+
+  PREMIUM:
     P0:
-      enterprise: 240   # 4 hours
-      premium: 480      # 8 hours
-      # ... more tiers
+      response_minutes: 30
+      resolution_minutes: 120
+
+    P1:
+      response_minutes: 120
+      resolution_minutes: 480
+
+    P2:
+      response_minutes: 360
+      resolution_minutes: 720
+
+    P3:
+      response_minutes: 720
+      resolution_minutes: 1440
+
+  STANDARD:
+    P1:
+      response_minutes: 240
+      resolution_minutes: 720
+    P2:
+      response_minutes: 480
+      resolution_minutes: 1440
+    P3:
+      response_minutes: 1440
+      resolution_minutes: 2880
+
+  BASIC:
+    P2:
+      response_minutes: 720
+      resolution_minutes: 1440
+    P3:
+      response_minutes: 1440
+      resolution_minutes: 4320
+
 
 alert_thresholds:
   warning: 15     # Alert when 15% or less time remains
@@ -225,6 +268,8 @@ escalation_levels:
   0: "No escalation"
   1: "Team lead notified"
   2: "Manager notified"
+  4: "Director notified"
+  5: "VP notified"
   # ... more levels
 ```
 
@@ -261,7 +306,7 @@ Configuration hot-reloads automatically when the file changes.
 - Alert thresholds
 - Customer tier and priority
 
-## 🚨 SLA Engine
+## SLA Engine
 
 ### How It Works
 1. **Background Scheduler**: Runs every minute (configurable)
@@ -282,24 +327,12 @@ Configuration hot-reloads automatically when the file changes.
 4. WebSocket event emitted for real-time updates
 5. Alert marked as sent
 
-## 📊 Monitoring & Observability
-
-### Structured Logging
-All logs are JSON-formatted with:
-- Correlation ID for request tracing
-- Operation type and latency
-- Ticket ID for context
-- Error details and stack traces
 
 ### Health Checks
 ```http
 GET /health
 # Returns: {"status": "healthy", "timestamp": "..."}
 ```
-
-### Metrics Endpoints
-- `/metrics`: Prometheus-compatible metrics
-- `/status`: Service status with component health
 
 # Run app
 # Build docker image 
