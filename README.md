@@ -331,10 +331,11 @@ Configuration hot-reloads automatically when the file changes.
 ### Health Checks
 ```http
 GET /health
-# Returns: {"status": "healthy", "timestamp": "..."}
+# Returns: {"status": "healthy", "service": "SLA Tracker API"}
 ```
 
 # Run app
+uvicorn main:app --host 0.0.0.0 --port 5678 --reload
 # Build docker image 
 # Remove if exists
 docker rm -f fastapi-app || true
