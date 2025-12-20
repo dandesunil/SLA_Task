@@ -1,0 +1,83 @@
+# ================================
+# SLA ENGINE CONFIGURATION
+# ================================
+
+version: 1
+
+websocket:
+  enabled: true
+  url: "wss://sla-events.yourcompany.com/ws"
+  reconnect:
+    retries: 5
+    backoff_seconds: 3
+
+# Global thresholds for SLA health
+thresholds:
+  warning_pct: 15     # ≤ 15% remaining → WARNING
+  critical_pct: 5     # ≤ 5% remaining → CRITICAL
+
+# SLA targets in minutes
+# Matrix: customer_tier → priority → targets
+sla_targets:
+  ENTERPRISE:
+    P0:
+      response_minutes: 15
+      resolution_minutes: 60
+      escalation:
+        LEVEL_1: 10
+        LEVEL_2: 20
+        LEVEL_3: 30
+        LEVEL_4: 45
+
+    P1:
+      response_minutes: 60
+      resolution_minutes: 240
+
+    P2:
+      response_minutes: 240
+      resolution_minutes: 480
+
+    P3:
+      response_minutes: 480
+      resolution_minutes: 1440
+
+  PREMIUM:
+    P0:
+      response_minutes: 30
+      resolution_minutes: 120
+
+    P1:
+      response_minutes: 120
+      resolution_minutes: 480
+
+    P2:
+      response_minutes: 360
+      resolution_minutes: 720
+
+    P3:
+      response_minutes: 720
+      resolution_minutes: 1440
+
+  STANDARD:
+    P1:
+      response_minutes: 240
+      resolution_minutes: 720
+    P2:
+      response_minutes: 480
+      resolution_minutes: 1440
+    P3:
+      response_minutes: 1440
+      resolution_minutes: 2880
+
+  BASIC:
+    P2:
+      response_minutes: 720
+      resolution_minutes: 1440
+    P3:
+      response_minutes: 1440
+      resolution_minutes: 4320
+
+# SLA clock pause states
+pause_states:
+  - PENDING_CUSTOMER
+  - PENDING_INTERNAL

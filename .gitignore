@@ -1,0 +1,28 @@
+# Ignore files that can be safely derived from other files, such as
+# compilation results.
+*.pyc
+*.pyo
+__pycache__/
+
+# Ignore files that are unique to particular users, such as
+# configuration files in the user's home directory.
+# .DS_Store
+# .lein
+# .local
+# .spotify
+# .stversions
+# .vagrant
+# .virtualenv
+# .vmware
+# Environments
+.env
+.venv
+venv3
+venv/bin
+venv/include
+venv/lib
+venv/lib/python3.x
+venv/lib/python3.x/site-packages
+venv/local
+venv/pyvenv.cfg
+

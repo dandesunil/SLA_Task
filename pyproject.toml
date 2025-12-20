@@ -1,0 +1,46 @@
+[project]
+name = "sla-tracking-service"
+version = "1.0.0"
+description = "Micro service for tracking and escalating customer support tickets with SLA monitoring"
+authors = [
+    {name = "Dande Sunil Kumar", email = "dsunilkumar421@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi==0.104.1",
+    "uvicorn[standard]==0.24.0",
+    "sqlalchemy==2.0.23",
+    "asyncpg==0.29.0",
+    "alembic==1.12.1",
+    "pydantic==2.5.0",
+    "pydantic-settings==2.1.0",
+    "apscheduler==3.10.4",
+    "pyyaml==6.0.1",
+    "watchdog==3.0.0",
+    "httpx==0.25.2",
+    "structlog==23.2.0",
+    "python-multipart==0.0.6",
+    "jinja2==3.1.2",
+    "python-json-logger",
+    "greenlet",
+    "sentence-transformers>=5.2.0",
+    "beautifulsoup4>=4.14.3",
+    "tqdm>=4.67.1",
+    "numpy>=2.4.0",
+    "faiss-cpu>=1.13.1",
+    "chromadb>=0.5.0",
+    "rank-bm25>=0.2.2",
+    "nltk>=3.9.2",
+    "torch>=2.0.0",
+    "langchain>=0.0.27",
+    "transformers>=4.30.0",
+    "accelerate>=0.20.0",
+    "datasets>=2.14.0",
+    "tokenizers>=0.13.0",
+    "scikit-learn>=1.0.0",
+    "tqdm>=4.65.0",
+    "pandas>=1.5.0",
+    "python-dotenv>=1.0.0",
+    "colorama>=0.4.6"
+]

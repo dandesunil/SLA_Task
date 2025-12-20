@@ -1,0 +1,108 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: sla-postgres
+    environment:
+      POSTGRES_DB: sla_service
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # SLA Tracking Service
+  sla-service:
+    build: .
+    container_name: sla-service
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://test:netskope_test@localhost:5432/sla_tracker
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+      - SLACK_WEBHOOK_URL=http://mock-slack:5000/webhook
+      - SCHEDULER_INTERVAL=60
+      - WS_MAX_CONNECTIONS=100
+    ports:
+      - "5678:5678"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mock-slack:
+        condition: service_started
+    volumes:
+      - ./sla_config.yaml:/app/sla_config.yaml
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5678/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Mock Slack Server for Testing
+  mock-slack:
+    image: containous/whoami:latest
+    container_name: mock-slack
+    ports:
+      - "5000:80"
+    environment:
+      - METADATA_NAME=mock-slack
+      - METADATA_DESCRIPTION=Mock Slack webhook server for testing
+    labels:
+      - "traefik.enable=false"
+    restart: unless-stopped
+
+  # Redis for Caching (Optional)
+  redis:
+    image: redis:7-alpine
+    container_name: sla-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Database Admin Interface (Optional)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: sla-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@sla-service.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "8080:80"
+    depends_on:
+      - postgres
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  default:
+    driver: bridge
+    name: sla-network
