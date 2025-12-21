@@ -86,17 +86,6 @@ class TicketService:
         )
         return result.scalar_one_or_none()
     
-    async def get_ticket_by_external_id(self, db: AsyncSession, external_id: str) -> Optional[Ticket]:
-        """Get ticket by external ID."""
-        result = await db.execute(
-            select(Ticket)
-            .options(
-                selectinload(Ticket.status_history),
-                selectinload(Ticket.alerts)
-            )
-            .where(Ticket.external_id == external_id)
-        )
-        return result.scalar_one_or_none()
     
     async def get_tickets(
         self, 

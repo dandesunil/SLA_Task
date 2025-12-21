@@ -1,14 +1,10 @@
-"""
-Complete RAG Pipeline Implementation
-Uses existing embeddings system and integrates with LLM for response generation
-"""
-
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 from typing import List, Dict, Optional
 import json
 from pathlib import Path
-
+import faiss
+import json
 # Import existing embeddings system
 from ticket_triage_service.embeddings import (
     EmbeddingModel, 
@@ -91,8 +87,10 @@ class RAGPipeline:
             Dictionary with answer and source documents
         """
         try:
+            embedder = EmbeddingModel().get_embedding_model()
+            query_embedding = embedder.encode(question)
             # Step 1: Retrieve relevant documents
-            retrieved_docs = self.retriever.search(question, k=max_context_docs)
+            retrieved_docs = self.retriever.retrieve(query_embedding,question, k=max_context_docs)
             
             # Step 2: Create context from retrieved documents
             context = self._create_context(retrieved_docs)
@@ -149,24 +147,42 @@ class RAGPipeline:
     
     def _create_prompt(self, question: str, context: str) -> str:
         """Create the prompt for the LLM"""
-        prompt = f"""Based on the following documents, please answer the question:
+        prompt = f"""
+            You are an AI assistant answering questions using ONLY the provided documents.
 
-{context}
+            DOCUMENTS:
+            {context}
 
-Question: {question}
+            RULES:
+            - Use only the information in the DOCUMENTS.
+            - Do NOT use prior knowledge.
+            - If the answer is not explicitly stated, respond with "I don't know".
 
-Answer:"""
+            QUESTION:
+            {question}
+
+            ANSWER:
+            """
         return prompt
     
     def _get_source_metadata(self, retrieved_docs: List[str]) -> List[Dict]:
         """Get metadata for the source documents"""
         metadata = []
-        for doc in retrieved_docs:
-            # Find matching document in original documents to get metadata
-            for orig_doc in self.documents:
-                if orig_doc["text"] == doc and "metadata" in orig_doc:
-                    metadata.append(orig_doc["metadata"])
-                    break
+        for rank, doc_id in enumerate(retrieved_docs['dense_ids']):
+            if doc_id < 0 or doc_id >= len(self.documents):
+                continue
+            metadata.append({
+                "id": int(doc_id),
+                "text": self.documents[int(doc_id)],
+                "source": "dense"
+            })
+        # sparse_results = []
+        # for text, score,text in retrieved_docs['bm25_results']:
+        #     sparse_results.append({
+        #         "bmtext":text,
+        #         "score": float(score),
+        #         "source": "bm25"
+        #     })
         return metadata
 
 
@@ -263,6 +279,14 @@ def build_embeddings():
         return None, None
 
 
+def load_faiss_store(index_path: str, text_path: str):
+    index = faiss.read_index(index_path)
+
+    with open(text_path, "r", encoding="utf-8") as f:
+        texts = json.load(f)
+
+    return index, texts
+
 def rag_pipeline(query: str) -> Dict:
     """
     Complete RAG pipeline for answering questions
@@ -276,7 +300,14 @@ def rag_pipeline(query: str) -> Dict:
     try:
         # 1. Build embeddings and retrieval system
         print("Building retrieval system...")
-        retriever, documents = build_embeddings()
+        # retriever, documents = build_embeddings()
+        index, documents = load_faiss_store(
+                    "artifacts/faiss.index",
+                    "artifacts/texts.json"
+                )
+        bm25_index = BM25Index(documents)
+        retriever = HybridRetriever(index, bm25_index)
+        print("Retrieval system built successfully!")                    
         
         if retriever is None:
             return {"error": "Failed to build retrieval system"}
@@ -329,61 +360,3 @@ def run_rag(question: str) -> Dict:
         "sources": result.get("context_documents", [])
     }
 
-
-def interactive_demo():
-    """Interactive demo of the RAG pipeline"""
-    print("=" * 60)
-    print("🎯 Netskope RAG Pipeline Demo")
-    print("=" * 60)
-    print("Ask questions about Netskope products and features!")
-    print("Type 'quit' to exit")
-    print("-" * 60)
-    
-    # Build system once
-    print("Initializing system...")
-    retriever, documents = build_embeddings()
-    
-    if retriever is None:
-        print("❌ Failed to initialize system")
-        return
-    
-    print("Loading LLM...")
-    llm = get_hf_llm()
-    
-    rag = RAGPipeline(llm, retriever, documents)
-    
-    while True:
-        try:
-            query = input("\n❓ Your question: ").strip()
-            
-            if query.lower() in ['quit', 'exit', 'q']:
-                print("👋 Goodbye!")
-                break
-            
-            if not query:
-                continue
-                
-            result = rag.query(query)
-            
-            print("\n" + "=" * 40)
-            print("📝 ANSWER:")
-            print("=" * 40)
-            print(result['answer'])
-            
-            if result['source_metadata']:
-                print("\n" + "=" * 40)
-                print("📚 SOURCES:")
-                print("=" * 40)
-                for i, metadata in enumerate(result['source_metadata'][:3], 1):
-                    print(f"{i}. {metadata.get('product', 'Unknown Product')} - {metadata.get('title', 'No title')}")
-            
-        except KeyboardInterrupt:
-            print("\n👋 Goodbye!")
-            break
-        except Exception as e:
-            print(f"❌ Error: {e}")
-
-
-if __name__ == "__main__":
-    # Run interactive demo
-    interactive_demo()

@@ -147,32 +147,19 @@ async def setup_config_monitoring():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
-    # Startup
-    # logger.info("Starting SLA Tracking Service", 
-    #            app_name=settings.app_name,
-    #            debug=settings.debug)
-    
+    # Startup    
     try:
         # Initialize database
         await init_database()
-        # logger.info("Database initialized")
-        
         # Start background scheduler
-        await start_background_scheduler()
-        
+        await start_background_scheduler()        
         # Setup configuration monitoring
         await setup_config_monitoring()
-        
-        # logger.info("SLA Tracking Service started successfully")
-        yield
-        
+        yield        
     except Exception as e:
         logger.error("Failed to start application", error=str(e))
         raise
-    finally:
-        # Shutdown
-        # logger.info("Shutting down SLA Tracking Service")
-        
+    finally:        
         try:
             await stop_background_scheduler()
             await close_database()

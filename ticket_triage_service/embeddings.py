@@ -98,35 +98,36 @@ class FaissIndex:
         return ids[0]
     
 class BM25Index:
-    def __init__(self, texts: List[str]):
-        tokenized = [t.lower().split() for t in texts]
-        self.bm25 = BM25Okapi(tokenized)
+    def __init__(self, texts):
         self.texts = texts
+        tokenized = [t.split() for t in texts]
+        self.bm25 = BM25Okapi(tokenized)
 
-    def search(self, query: str):
-        return self.bm25.get_scores(query.lower().split())
+    def search(self, query, k=5):
+        scores = self.bm25.get_scores(query.split())
+        top_k = sorted(
+            range(len(scores)),
+            key=lambda i: scores[i],
+            reverse=True
+        )[:k]
+        return [(self.texts[i], scores[i]) for i in top_k]
     
 
-
 class HybridRetriever:
-    def __init__(self, faiss_index: FaissIndex, bm25_index: BM25Index):
-        self.faiss = faiss_index
-        self.bm25 = bm25_index
-        self.texts = faiss_index.texts
+    def __init__(self, faiss_index, bm25_index):
+        self.faiss_index = faiss_index
+        self.bm25_index = bm25_index
 
-    def search(self, query: str, k=5):
-        bm25_scores = self.bm25.search(query)
-        faiss_ids = self.faiss.search(query, k)
+    def retrieve(self, query_embedding, query_text, k=5):
+        # Dense search
+        distances, dense_ids = self.faiss_index.search(
+            query_embedding.reshape(1, -1), k
+        )
 
-        scores = {}
+        # Sparse search
+        bm25_results = self.bm25_index.search(query_text, k)
 
-        # Semantic boost
-        for idx in faiss_ids:
-            scores[idx] = scores.get(idx, 0) + 1.0
-
-        # Lexical contribution
-        for i, score in enumerate(bm25_scores):
-            scores[i] = scores.get(i, 0) + 0.3 * score
-
-        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-        return [self.texts[i] for i, _ in ranked[:k]]
+        return {
+            "dense_ids": dense_ids[0].tolist(),
+            "bm25_results": bm25_results
+        }
