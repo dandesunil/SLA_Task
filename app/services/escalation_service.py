@@ -107,7 +107,7 @@ class EscalationService:
         """Send notifications based on escalation level."""
         # Get webhook configuration
         webhook_config = sla_config.get_webhook_config("slack")
-        webhook_url = webhook_config.get("url")
+        webhook_url = webhook_config.get("slack_webhook_url")
         
         if not webhook_url:
             logger.warning("Slack webhook URL not configured, skipping notifications")
@@ -130,7 +130,7 @@ class EscalationService:
     async def _send_critical_notifications(self, db: AsyncSession, ticket: Ticket, alert: Alert):
         """Send critical breach notifications."""
         webhook_config = sla_config.get_webhook_config("slack")
-        webhook_url = webhook_config.get("url")
+        webhook_url = webhook_config.get("slack_webhook_url")
         
         if not webhook_url:
             logger.warning("Slack webhook URL not configured, skipping critical notifications")

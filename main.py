@@ -4,10 +4,10 @@ import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, Dict
-
+import re
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse, PlainTextResponse
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import structlog
@@ -234,7 +234,15 @@ async def responsd(question: str):
         print("\nSOURCES:")
         for i, s in enumerate(result["sources"], 1):
             print(f"[{i}] {s[:200]}...")
-        return {"result": result["answer"]}
+        HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+        def is_html(content: str) -> bool:
+            """Returns True if content looks like HTML."""
+            return bool(HTML_TAG_RE.search(content))
+        if is_html(result['answer']):
+            return HTMLResponse(content=result['answer'])
+        else:
+            return PlainTextResponse(content=result['answer'])
     except Exception as e:
         return JSONResponse(status_code=500, content={"detail": str(e)})
 

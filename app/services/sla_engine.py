@@ -19,16 +19,73 @@ logger = structlog.get_logger(__name__)
 
 
 class SLAEngine:
-    """Background service for SLA evaluation and alert generation."""
+    """
+    Service Level Agreement (SLA) evaluation engine with comprehensive monitoring and escalation capabilities.
+    
+    The SLAEngine is a background service responsible for:
+    - Continuously evaluating SLA status for all active tickets
+    - Generating proactive alerts based on SLA thresholds (warning at 15%, critical at 5% remaining time)
+    - Detecting SLA breaches and triggering escalation workflows
+    - Managing escalation levels based on SLA status changes
+    - Providing metrics and reporting capabilities for SLA compliance monitoring
+    
+    The engine operates on two types of SLAs:
+    - Response SLA: Time to provide first response to customer
+    - Resolution SLA: Time to completely resolve the ticket
+    
+    Escalation levels range from 0 (no escalation) to 4 (VP level escalation for breaches).
+    
+    Args:
+        ticket_service: Service for ticket data access and management
+        escalation_service: Service for handling escalation workflows and notifications
+    """
     
     def __init__(self, ticket_service: TicketService, escalation_service: EscalationService):
+        """
+        Initialize the SLAEngine with required service dependencies.
+        
+        Args:
+            ticket_service: TicketService instance for ticket data operations
+            escalation_service: EscalationService instance for escalation workflow management
+        """
         self.ticket_service = ticket_service
         self.escalation_service = escalation_service
         self.sla_calculator = SLACalculator()
         self.is_running = False
     
     async def evaluate_all_tickets(self, db: AsyncSession) -> Dict[str, Any]:
-        """Evaluate SLA status for all active tickets."""
+        """
+        Evaluate SLA status and compliance for all active tickets in the system.
+        
+        This is the main orchestration method that processes all open tickets to:
+        1. Update SLA status based on current time and deadlines
+        2. Check if alerts should be generated based on thresholds
+        3. Detect SLA breaches and trigger escalation workflows
+        4. Update escalation levels based on SLA status changes
+        
+        The method operates on all tickets that are:
+        - Not in terminal states (RESOLVED, CLOSED, CANCELLED)
+        - Have response SLA deadlines defined
+        
+        Business Logic:
+        - Warning alerts trigger when ≤15% of SLA time remains
+        - Critical alerts trigger when ≤5% of SLA time remains
+        - Breaches trigger maximum escalation (Level 4)
+        - Escalation levels update based on current SLA status
+        
+        Args:
+            db: AsyncSession for database operations
+            
+        Returns:
+            Dict containing processing statistics:
+            - processed_tickets: Number of tickets evaluated
+            - alerts_created: Number of new alerts generated
+            - breaches_detected: Number of SLA breaches found
+            - evaluation_time_seconds: Time taken for full evaluation
+            
+        Raises:
+            Exception: If evaluation fails, database changes are rolled back
+        """
         start_time = datetime.now(timezone.utc)
         processed_count = 0
         alert_count = 0
@@ -89,7 +146,30 @@ class SLAEngine:
             raise
     
     async def _evaluate_ticket_sla(self, db: AsyncSession, ticket: Ticket):
-        """Evaluate SLA status for a single ticket."""
+        """
+        Evaluate and update SLA status for a single ticket.
+        
+        This method performs a comprehensive SLA evaluation for an individual ticket:
+        1. Updates SLA status calculations based on current time and deadlines
+        2. Calculates remaining time for both response and resolution SLAs
+        3. Determines SLA status (COMPLIANT, WARNING, CRITICAL, BREACHED)
+        4. Updates escalation level based on new SLA status
+        
+        The evaluation considers:
+        - Current time vs. SLA deadlines
+        - Remaining time as percentage of target SLA time
+        - Thresholds: WARNING (≤15%), CRITICAL (≤5%), BREACHED (≤0%)
+        - Previous escalation level to determine if escalation is needed
+        
+        Args:
+            db: AsyncSession for database operations
+            ticket: Ticket instance to evaluate
+            
+        Note:
+            This method modifies the ticket object in-place and updates escalation
+            level in the database if changed. Changes are not committed to allow
+            for batch processing with other tickets.
+        """
         # Update SLA status
         ticket.update_sla_status()
         
@@ -97,7 +177,35 @@ class SLAEngine:
         await self._update_escalation_level(db, ticket)
     
     async def _check_and_create_alerts(self, db: AsyncSession, ticket: Ticket) -> List[Alert]:
-        """Check if alerts should be created for a ticket and create them."""
+        """
+        Check if proactive alerts should be created for a ticket based on SLA thresholds.
+        
+        This method orchestrates alert creation for both response and resolution SLAs by:
+        1. Retrieving configurable alert thresholds from system configuration
+        2. Checking response SLA for threshold violations
+        3. Checking resolution SLA for threshold violations  
+        4. Creating alerts for both SLA types if thresholds are breached
+        5. Triggering escalation workflows for new alerts
+        
+        Alert Thresholds:
+        - WARNING: Triggers when ≤15% of SLA time remains
+        - CRITICAL: Triggers when ≤5% of SLA time remains
+        
+        Business Logic:
+        - Only creates alerts for tickets not already in BREACHED status
+        - Prevents duplicate alerts using active alert checking
+        - Triggers escalation workflow when new alerts are created
+        - Handles both response and resolution SLA types independently
+        
+        Args:
+            db: AsyncSession for database operations
+            ticket: Ticket to check for alert conditions
+            
+        Returns:
+            List of Alert objects created during this check. May be empty if no
+            alert conditions were met or if duplicate prevention logic blocked
+            alert creation.
+        """
         alerts_created = []
         
         # Get alert thresholds from config
@@ -126,7 +234,44 @@ class SLAEngine:
         warning_threshold: float, 
         critical_threshold: float
     ) -> List[Alert]:
-        """Check alerts for a specific SLA type (response or resolution)."""
+        """
+        Check alert conditions for a specific SLA type and create alerts if needed.
+        
+        This method evaluates whether proactive alerts should be generated for a specific
+        SLA type (response or resolution) based on remaining time thresholds. It implements
+        sophisticated alert logic to prevent alert spam and ensure proper escalation.
+        
+        Alert Decision Logic:
+        1. Retrieves SLA-specific data (remaining time, target, deadline, status)
+        2. Skips processing if no SLA target exists or status is already BREACHED
+        3. Calculates remaining time as percentage of target SLA time
+        4. Determines alert type based on thresholds:
+           - CRITICAL: ≤ critical_threshold% time remaining AND status not already CRITICAL
+           - WARNING: ≤ warning_threshold% time remaining AND status is COMPLIANT
+        5. Checks for existing active alerts to prevent duplicates
+        6. Creates new alert if conditions are met and triggers escalation
+        
+        Key Business Rules:
+        - Only escalates from COMPLIANT to WARNING status (prevents downgrade alerts)
+        - Only escalates from non-CRITICAL to CRITICAL status  
+        - Prevents duplicate alerts using active alert checking
+        - Automatically triggers escalation workflow for new alerts
+        
+        Args:
+            db: AsyncSession for database operations
+            ticket: Ticket instance to evaluate
+            sla_type: Either "response" or "resolution" - determines which SLA to check
+            warning_threshold: Percentage threshold for warning alerts (typically 15.0)
+            critical_threshold: Percentage threshold for critical alerts (typically 5.0)
+            
+        Returns:
+            List of Alert objects created. Empty list if no alert conditions met or
+            if alert creation was prevented by duplicate checking logic.
+            
+        Note:
+            This method performs both alert evaluation and creation, making it a key
+            component in the SLA monitoring workflow.
+        """
         alerts_created = []
         
         # Get current SLA status and remaining time
@@ -176,7 +321,40 @@ class SLAEngine:
         return alerts_created
     
     async def _check_for_breaches(self, db: AsyncSession, ticket: Ticket) -> bool:
-        """Check if SLA has been breached and handle escalation."""
+        """
+        Check for SLA breaches and trigger appropriate escalation workflows.
+        
+        This method performs critical SLA breach detection and response:
+        1. Checks both response and resolution SLA deadlines against current time
+        2. Updates ticket SLA status to BREACHED if deadlines are exceeded
+        3. Creates special breach alerts to notify stakeholders
+        4. Triggers maximum escalation (Level 4) for any detected breaches
+        
+        Breach Detection Logic:
+        - Response SLA Breach: Current time exceeds response_sla_deadline
+        - Resolution SLA Breach: Current time exceeds resolution_sla_deadline
+        - Only processes tickets not already marked as BREACHED status
+        - Updates status to BREACHED and creates breach alerts for each type
+        
+        Escalation Response:
+        - Any breach triggers immediate escalation to Level 4 (VP level)
+        - Breach alerts include comprehensive metadata for incident response
+        - Escalation workflow handles stakeholder notifications
+        
+        Args:
+            db: AsyncSession for database operations
+            ticket: Ticket to check for SLA breaches
+            
+        Returns:
+            bool: True if any SLA breach was detected, False otherwise. This
+            return value allows the calling method to track breach statistics
+            and take additional actions if needed.
+            
+        Critical Behavior:
+            This method represents the final safety net in SLA compliance. When
+            called, it means the system has detected that customer commitments
+            cannot be met, requiring immediate executive attention.
+        """
         breach_detected = False
         
         # Check response SLA breach

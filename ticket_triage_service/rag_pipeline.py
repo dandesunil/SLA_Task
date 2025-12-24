@@ -14,9 +14,10 @@ from ticket_triage_service.embeddings import (
     HybridRetriever
 )
 from app.config import settings
-
+import re
 from transformers import pipeline
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from ticket_triage_service.grounding import grounding_ratio
 
 
 class PromptIntentClassifier:
@@ -32,6 +33,7 @@ class PromptIntentClassifier:
                 model=model_name,
                 token=settings.HUGGINGFACE_API_KEY if settings.HUGGINGFACE_API_KEY else None
             )
+            # self.classifier = pipeline("text-classification", model="BAAI/bge-reranker-v2-m3",token=settings.HUGGINGFACE_API_KEY if settings.HUGGINGFACE_API_KEY else None)
         except Exception as e:
             print(f"Error loading model {model_name}: {e}")
             # Fallback to a simpler model
@@ -104,7 +106,8 @@ class RAGPipeline:
                 max_new_tokens=512, 
                 temperature=0.7,
                 do_sample=True,
-                pad_token_id=50256  # Common pad token for many models
+                pad_token_id=50256,  # Common pad token for many models
+                stream=True
             )
             
             # Extract generated text
@@ -323,6 +326,13 @@ def rag_pipeline(query: str) -> Dict:
         # 4. Process query
         print(f"Processing query: {query}")
         result = rag.query(query)
+
+        # Check hallucination ratio
+        final_response = extract_final_answer(result)
+        grounding_ratio_val = grounding_ratio(final_response, result["source_metadata"])
+        if grounding_ratio_val < 0.75:
+            print(f"Warning: hallucination ratio is {grounding_ratio_val:.2f}. Results may be unreliable.")
+
         
         print("Query processed successfully!")
         return result
@@ -338,6 +348,33 @@ def rag_pipeline(query: str) -> Dict:
             "source_metadata": []
         }
 
+
+def extract_final_answer(llm_response: str) -> str:
+    """
+    Extracts the actual answer text from LLM output.
+    Removes DOCUMENTS / SOURCES / CONTEXT sections.
+    """
+
+    if not llm_response:
+        return ""
+
+    # Stop at DOCUMENTS / SOURCES / CONTEXT (case-insensitive)
+    split_markers = [
+        r"\nDOCUMENTS:",
+        r"\nSOURCES:",
+        r"\nCONTEXT:",
+        r"\nREFERENCES:"
+    ]
+
+    answer = llm_response['answer']
+
+    for marker in split_markers:
+        answer = re.split(marker, answer, flags=re.IGNORECASE)[0]
+
+    # Remove "ANSWER:" prefix if present
+    answer = re.sub(r"^ANSWER:\s*", "", answer, flags=re.IGNORECASE)
+
+    return answer.strip()
 
 def run_rag(question: str) -> Dict:
     """

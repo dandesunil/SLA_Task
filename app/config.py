@@ -80,13 +80,16 @@ class SLAConfig:
     
     def get_sla_target(self, sla_type: str, priority: str, customer_tier: str) -> int:
         """Get SLA target time in minutes."""
-        return self._config.get(
-            'sla_targets', {}
-        ).get(
-            sla_type, {}
-        ).get(
-            priority, {}
-        ).get(customer_tier, 1440)  # Default to 24 hours
+        print(sla_type, priority, customer_tier)
+
+        return (
+            self._config
+            .get("sla_targets", {})
+            .get(customer_tier, {})
+            .get(priority, {})
+            .get(sla_type, 1440)
+        )
+        
     
     def get_alert_threshold(self, level: str) -> float:
         """Get alert threshold percentage."""
