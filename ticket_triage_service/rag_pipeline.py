@@ -107,7 +107,6 @@ class RAGPipeline:
                 temperature=0.7,
                 do_sample=True,
                 pad_token_id=50256,  # Common pad token for many models
-                stream=True
             )
             
             # Extract generated text

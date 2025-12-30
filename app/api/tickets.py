@@ -1,6 +1,6 @@
 """Ticket API endpoints."""
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any,Union
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 @router.post("/", response_model=TicketResponse, status_code=status.HTTP_200_OK)
 async def create_ticket(
-    ticket_data: TicketCreate,
+    ticket_data: Union[TicketCreate,List[TicketCreate]],
     db_session: AsyncSession = Depends(get_db_session),
     ticket_service: TicketService = Depends(get_ticket_service),
     current_user: dict = Depends(get_current_user)
